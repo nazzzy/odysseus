@@ -4264,3 +4264,153 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
         pass
 
     return {"output": "Vault unlocked. Session saved.", "exit_code": 0}
+
+
+async def do_manage_external_tasks(content: str, owner: Optional[str] = None) -> Dict:
+    """Handle manage_external_tasks tool calls.
+
+    Actions: list | create | complete | update | sync
+    Works directly on the DB layer — sync_pending is set and the poller
+    picks up push changes on its next cycle.
+    """
+    from core.database import SessionLocal, ExternalTask
+    from src.task_sources import get_sources_for_owner
+    import uuid as _uuid
+
+    try:
+        args = _parse_tool_args(content)
+    except ValueError:
+        return {"error": "Invalid JSON arguments", "exit_code": 1}
+
+    action = (args.get("action") or "list").strip().lower()
+    db = SessionLocal()
+
+    try:
+        # ── LIST ──────────────────────────────────────────────────────────────
+        if action == "list":
+            q = db.query(ExternalTask).filter(ExternalTask.deleted_at.is_(None))
+            if owner is not None:
+                q = q.filter(ExternalTask.owner == owner)
+            source_id = args.get("source_id")
+            if source_id:
+                q = q.filter(ExternalTask.source_id == source_id)
+            status = args.get("status")
+            if status:
+                q = q.filter(ExternalTask.status == status)
+            tasks = q.order_by(ExternalTask.created_at.desc()).limit(100).all()
+            if not tasks:
+                return {"response": "No external tasks found.", "exit_code": 0}
+            lines = []
+            for t in tasks:
+                conflict = " [CONFLICT]" if t.sync_conflict else ""
+                pending = f" [{t.sync_pending}]" if t.sync_pending else ""
+                due = f" due:{t.due_date}" if t.due_date else ""
+                status_tag = f" [{t.status}]"
+                lines.append(
+                    f"- [{t.id[:8]}] {t.title}{status_tag}{due}{conflict}{pending}"
+                )
+            return {"results": "\n".join(lines), "exit_code": 0}
+
+        # ── CREATE ────────────────────────────────────────────────────────────
+        elif action == "create":
+            source_id = args.get("source_id", "")
+            if not source_id:
+                return {"error": "source_id is required", "exit_code": 1}
+            if not any(s["id"] == source_id for s in get_sources_for_owner(owner or "")):
+                return {"error": f"Source not found or not owned by you: {source_id!r}", "exit_code": 1}
+            title = (args.get("title") or "").strip()
+            if not title:
+                return {"error": "title is required", "exit_code": 1}
+            task = ExternalTask(
+                id=_uuid.uuid4().hex,
+                source_id=source_id,
+                owner=owner or "",
+                title=title,
+                body=args.get("body"),
+                due_date=args.get("due_date"),
+                priority=args.get("priority"),
+                labels=args.get("labels") or [],
+                sync_pending="create",
+            )
+            db.add(task)
+            db.commit()
+            return {
+                "response": f"Created task [{task.id[:8]}]: {title} (will sync on next poll)",
+                "id": task.id,
+                "exit_code": 0,
+            }
+
+        # ── COMPLETE ──────────────────────────────────────────────────────────
+        elif action == "complete":
+            task_id = args.get("id") or args.get("task_id") or ""
+            if len(task_id) < 6:
+                return {"error": "id must be at least 6 characters", "exit_code": 1}
+            q = db.query(ExternalTask).filter(ExternalTask.id.startswith(task_id))
+            if owner:
+                q = q.filter(ExternalTask.owner == owner)
+            task = q.first()
+            if task is None:
+                return {"error": f"Task not found: {task_id!r}", "exit_code": 1}
+            task.status = "completed"
+            if task.sync_pending != "create":
+                task.sync_pending = "complete"
+            db.commit()
+            return {
+                "response": f"Marked task [{task.id[:8]}] complete (will sync on next poll)",
+                "exit_code": 0,
+            }
+
+        # ── UPDATE ────────────────────────────────────────────────────────────
+        elif action == "update":
+            task_id = args.get("id") or args.get("task_id") or ""
+            if len(task_id) < 6:
+                return {"error": "id must be at least 6 characters", "exit_code": 1}
+            q = db.query(ExternalTask).filter(ExternalTask.id.startswith(task_id))
+            if owner:
+                q = q.filter(ExternalTask.owner == owner)
+            task = q.first()
+            if task is None:
+                return {"error": f"Task not found: {task_id!r}", "exit_code": 1}
+            allowed = {"title", "body", "due_date", "priority", "labels"}
+            for k in allowed:
+                if k in args:
+                    setattr(task, k, args[k])
+            if task.sync_pending != "create":
+                task.sync_pending = "update"
+            db.commit()
+            return {
+                "response": f"Updated task [{task.id[:8]}] (will sync on next poll)",
+                "exit_code": 0,
+            }
+
+        # ── SYNC ──────────────────────────────────────────────────────────────
+        elif action == "sync":
+            from src.task_sync import sync_source as _sync_source
+            sources = get_sources_for_owner(owner or "")
+            source_id = args.get("source_id")
+            if source_id:
+                sources = [s for s in sources if s["id"] == source_id]
+            if not sources:
+                return {"response": "No task sources configured.", "exit_code": 0}
+            lines = []
+            for src in sources:
+                result = await _sync_source(src, owner or "")
+                lines.append(
+                    f"- {src.get('label', src['id'])}: "
+                    f"pulled={result.pulled} pushed={result.pushed} "
+                    f"conflicts={result.conflicts} deleted={result.deleted}"
+                    + (f" errors={result.errors}" if result.errors else "")
+                )
+            return {"response": "\n".join(lines), "exit_code": 0}
+
+        else:
+            return {
+                "error": f"Unknown action: {action!r}. Use: list, create, complete, update, sync",
+                "exit_code": 1,
+            }
+
+    except Exception as exc:
+        db.rollback()
+        return {"error": str(exc), "exit_code": 1}
+    finally:
+        db.close()

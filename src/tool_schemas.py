@@ -603,6 +603,67 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "manage_external_tasks",
+            "description": (
+                "Manage tasks synced from external sources such as Todoist. "
+                "Use 'list' to see tasks (filter by source_id or status). "
+                "Use 'create' to add a task locally (it will be pushed to the remote on the next sync cycle). "
+                "Use 'complete' to mark a task done. "
+                "Use 'update' to change title, body, due_date, priority, or labels. "
+                "Use 'sync' to trigger an immediate pull+push for all sources (or one specific source_id). "
+                "All changes set sync_pending and are pushed to the remote provider automatically — "
+                "do not also call api_call for the same action."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "create", "complete", "update", "sync"],
+                        "description": "The action to perform"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Task id or 8-char prefix (for complete/update)"
+                    },
+                    "source_id": {
+                        "type": "string",
+                        "description": "Filter list/sync to a specific source; for create, the source this task belongs to"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Task title (for create/update)"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional task description/notes (for create/update)"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "description": "Due date in YYYY-MM-DD format (for create/update)"
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "description": "Priority 1-4 (1=normal, 4=urgent; Todoist convention)"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Label strings to apply to the task (for create/update)"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["open", "completed"],
+                        "description": "Filter list results by status"
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "api_call",
             "description": "Call a registered API integration (RSS reader, git forge, bookmark manager, smart home, etc.). Check the system context for available integrations and their endpoints.",
             "parameters": {
