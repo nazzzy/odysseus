@@ -25,6 +25,7 @@ import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
+import externalTasksModule from './js/externalTasks.js';
 import adminModule from './js/admin.js';
 import settingsModule from './js/settings.js';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -913,6 +914,16 @@ function initializeEventListeners() {
     toolNotesBtn.addEventListener('click', () => {
       if (notesModule) {
         notesModule.togglePanel();
+      }
+    });
+  }
+
+  // External Tasks tool button
+  const toolExtTasksBtn = el('tool-ext-tasks-btn');
+  if (toolExtTasksBtn) {
+    toolExtTasksBtn.addEventListener('click', () => {
+      if (externalTasksModule) {
+        externalTasksModule.isPanelOpen() ? externalTasksModule.closePanel() : externalTasksModule.openPanel();
       }
     });
   }

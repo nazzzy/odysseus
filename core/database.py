@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, func, text
+from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, UniqueConstraint, func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
@@ -1712,6 +1712,34 @@ class Integration(TimestampMixin, Base):
     enabled = Column(Boolean, default=True)
 
 
+class ExternalTask(TimestampMixin, Base):
+    """A task synced from or to an external source (e.g. Todoist)."""
+    __tablename__ = "external_tasks"
+
+    id          = Column(String, primary_key=True, default=lambda: __import__("uuid").uuid4().hex)
+    source_id   = Column(String, nullable=False, index=True)
+    # NULL until a successful push creates the remote record
+    external_id = Column(String, nullable=True, index=True)
+    owner       = Column(String, nullable=False, default="", index=True)
+    title       = Column(String, nullable=False)
+    body        = Column(Text, nullable=True)
+    status      = Column(String, default="open")        # open | completed
+    due_date    = Column(String, nullable=True)
+    priority    = Column(Integer, nullable=True)
+    labels      = Column(JSON, default=list)
+    remote_data = Column(JSON, default=dict)
+    # last-write-wins: None | "create" | "update" | "complete" | "delete"
+    sync_pending  = Column(String, nullable=True)
+    # set when remote.updated_at > synced_at AND sync_pending is not None
+    sync_conflict = Column(Boolean, default=False, server_default=text("0"))
+    deleted_at  = Column(DateTime, nullable=True)
+    synced_at   = Column(DateTime, nullable=True)
+    # created_at / updated_at come from TimestampMixin
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", "owner",
+                         name="uq_external_tasks_source_ext_owner"),
+    )
 
 
 

@@ -760,6 +760,11 @@ logger.info("Webhook & API token routes initialized")
 from routes.note_routes import setup_note_routes
 app.include_router(setup_note_routes(task_scheduler))
 
+# External Tasks Hub (Todoist + template engine)
+from routes.task_source_pollers import get_sync_locks
+from routes.external_tasks_routes import setup_external_tasks_routes
+app.include_router(setup_external_tasks_routes(sync_locks=get_sync_locks()))
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
@@ -1146,6 +1151,15 @@ async def _startup_event():
     # removes the feature.
     from src.cookbook_serve_lifecycle import cookbook_serve_lifecycle_loop
     _startup_tasks.append(asyncio.create_task(cookbook_serve_lifecycle_loop()))
+
+    # External task source pollers (Todoist + template engine)
+    try:
+        from routes.task_source_pollers import start_task_pollers
+        poller_task = start_task_pollers()
+        if poller_task is not None:
+            _startup_tasks.append(poller_task)
+    except Exception as _e:
+        logger.warning("Failed to start task source pollers: %s", _e)
 
     logger.info("Application startup complete")
 

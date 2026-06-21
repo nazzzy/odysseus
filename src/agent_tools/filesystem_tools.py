@@ -358,29 +358,7 @@ class GrepTool:
         except ValueError as e:
             return {"error": f"grep: {e}", "exit_code": 1}
 
-        def _grep():
-            import re as _re
-            import shutil
-            rg = shutil.which("rg")
-            if rg:
-                cmd = [rg, "--line-number", "--no-heading", "--color=never",
-                       "--max-count", str(max_hits)]
-                if ignore_case:
-                    cmd.append("--ignore-case")
-                if glob_pat:
-                    cmd += ["--glob", glob_pat]
-                for _d in _CODENAV_SKIP_DIRS:
-                    cmd += ["--glob", f"!**/{_d}/**"]
-                cmd += ["--regexp", pattern, root]
-                try:
-                    import subprocess
-                    p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-                    lines = [ln for ln in (p.stdout or "").splitlines() if ln][:max_hits]
-                    return lines, None
-                except subprocess.TimeoutExpired:
-                    return None, "grep: timed out"
-                except Exception as _e:
-                    return None, f"grep: {_e}"
+        def _python_grep(_re):
             try:
                 rx = _re.compile(pattern, _re.IGNORECASE if ignore_case else 0)
             except _re.error as _e:
@@ -409,6 +387,33 @@ class GrepTool:
                 except (UnicodeDecodeError, OSError):
                     continue
             return hits, None
+
+        def _grep():
+            import re as _re
+            import shutil
+            rg = shutil.which("rg")
+            if rg:
+                cmd = [rg, "--line-number", "--no-heading", "--color=never",
+                       "--max-count", str(max_hits)]
+                if ignore_case:
+                    cmd.append("--ignore-case")
+                if glob_pat:
+                    cmd += ["--glob", glob_pat]
+                for _d in _CODENAV_SKIP_DIRS:
+                    cmd += ["--glob", f"!**/{_d}/**"]
+                cmd += ["--regexp", pattern, root]
+                try:
+                    import subprocess
+                    p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                    lines = [ln for ln in (p.stdout or "").splitlines() if ln][:max_hits]
+                    if lines:
+                        return lines, None
+                    return _python_grep(_re)
+                except subprocess.TimeoutExpired:
+                    return None, "grep: timed out"
+                except Exception as _e:
+                    return _python_grep(_re)
+            return _python_grep(_re)
 
         lines, err = await asyncio.to_thread(_grep)
         if err:
