@@ -132,7 +132,7 @@ function _renderAll(pane) {
 }
 
 function _renderFilters(pane) {
-  const el = (pane || document).getElementById('ext-tasks-filters');
+  const el = (pane || document).querySelector('#ext-tasks-filters');
   if (!el) return;
 
   const sourceOpts = _sources.map(s =>
@@ -161,7 +161,7 @@ function _renderFilters(pane) {
 }
 
 function _renderTasks(pane) {
-  const el = (pane || document).getElementById('ext-tasks-list');
+  const el = (pane || document).querySelector('#ext-tasks-list');
   if (!el) return;
 
   let tasks = _tasks.filter(t => !t.deleted_at);
@@ -219,7 +219,7 @@ function _taskCard(t) {
 // ---------------------------------------------------------------------------
 
 function _renderSourcesDrawer(pane) {
-  const el = (pane || document).getElementById('ext-tasks-sources-drawer');
+  const el = (pane || document).querySelector('#ext-tasks-sources-drawer');
   if (!el) return;
 
   const rows = _sources.map(s => `
@@ -383,7 +383,7 @@ function _esc(s) {
 }
 
 function _showError(pane, msg) {
-  const el = (pane || document).getElementById('ext-tasks-list');
+  const el = (pane || document).querySelector('#ext-tasks-list');
   if (el) el.innerHTML = `<div class="ext-tasks-error">${_esc(msg)}</div>`;
 }
 
